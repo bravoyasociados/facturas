@@ -2,167 +2,169 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Invoice iOS Pro</title>
-<meta name="theme-color" content="#007aff">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invoice PWA</title>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<link rel="manifest" href="data:application/json,{
+  &quot;name&quot;:&quot;Invoice PWA&quot;,
+  &quot;short_name&quot;:&quot;Invoice&quot;,
+  &quot;display&quot;:&quot;standalone&quot;
+}">
 
 <style>
-:root{
---bg:#f2f2f7;
---card:rgba(255,255,255,.75);
---text:#1c1c1e;
---primary:#007aff;
+:root {
+  --bg: #f2f2f7;
+  --card: #ffffff;
+  --text: #000;
 }
-@media (prefers-color-scheme: dark){
-:root{
---bg:#000;
---card:rgba(28,28,30,.75);
---text:#f2f2f7;
-}}
-body{
-margin:0;
-background:var(--bg);
-font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display";
-color:var(--text);
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000;
+    --card: #1c1c1e;
+    --text: #fff;
+  }
 }
-.hidden{display:none}
-.lock{
-height:100vh;
-display:flex;
-flex-direction:column;
-justify-content:center;
-align-items:center;
-text-align:center;
-padding:20px;
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont;
+  background: var(--bg);
+  color: var(--text);
 }
-.logo img{
-max-height:90px;
-margin-bottom:15px;
+.screen {
+  display: none;
+  padding: 30px;
 }
-button{
-width:100%;
-max-width:300px;
-padding:14px;
-border-radius:16px;
-border:none;
-background:var(--primary);
-color:#fff;
-font-size:16px;
+.screen.active {
+  display: block;
 }
-.app{
-max-width:900px;
-margin:auto;
-padding:20px;
+.card {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 20px;
 }
-.card{
-background:var(--card);
-backdrop-filter:blur(25px);
-border-radius:22px;
-padding:20px;
+input, button {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  margin-top: 10px;
+  font-size: 16px;
+}
+button {
+  background: #007aff;
+  color: #fff;
+}
+.logo {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.logo img {
+  max-height: 80px;
 }
 </style>
 </head>
 
 <body>
 
-<!-- BLOQUEO -->
-<div id="lock" class="lock">
+<!-- LOGIN -->
+<div id="login" class="screen active">
   <div class="logo">
-    <img src="logotipo.JPG" alt="Logotipo">
+    <img src="logotipo.jpg" alt="Logotipo">
   </div>
-  <h2>Invoice iOS</h2>
-  <p id="status">Autenticación requerida</p>
-  <button onclick="auth()">Continuar con Face ID</button>
+  <div class="card">
+    <h2>Acceso</h2>
+    <input type="password" id="pin" placeholder="Código">
+    <button onclick="login()">Entrar</button>
+  </div>
 </div>
 
 <!-- APP -->
-<div id="app" class="app hidden">
-  <div class="logo" style="text-align:center">
-    <img src="logotipo.JPG" alt="Logotipo" style="max-height:80px">
+<div id="app" class="screen">
+  <div class="logo">
+    <img src="logotipo.jpg" alt="Logotipo">
   </div>
   <div class="card">
-    <h3>✅ Acceso concedido</h3>
-    <p>Face ID verificado correctamente.</p>
-    <button onclick="pdf()">Probar PDF</button>
+    <h2>Invoice PWA</h2>
+    <p>Aplicación lista para pruebas.</p>
+    <button onclick="logout()">Cerrar sesión</button>
   </div>
 </div>
 
 <script>
-const PASSKEY_FLAG = "invoice_passkey_ok";
+const PIN = "28053";
 
-/* Utils */
-function randomBuffer(len = 32){
-  return crypto.getRandomValues(new Uint8Array(len));
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
 }
 
-/* FACE ID FLOW CORRECTO */
-async function auth(){
-  if(!window.PublicKeyCredential){
-    alert("Este navegador no soporta Face ID web");
+function login() {
+  const pin = document.getElementById('pin').value;
+
+  if (!localStorage.getItem("registered")) {
+    if (pin === PIN) {
+      localStorage.setItem("registered", "true");
+      registerBiometric();
+      show("app");
+    } else {
+      alert("Código incorrecto");
+    }
+  } else {
+    if (pin === PIN) {
+      show("app");
+    } else {
+      authenticateBiometric();
+    }
+  }
+}
+
+function logout() {
+  show("login");
+}
+
+async function registerBiometric() {
+  if (!window.PublicKeyCredential) return;
+
+  try {
+    await navigator.credentials.create({
+      publicKey: {
+        challenge: new Uint8Array(32),
+        rp: { name: "Invoice PWA" },
+        user: {
+          id: new Uint8Array(16),
+          name: "usuario",
+          displayName: "Usuario"
+        },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        authenticatorSelection: {
+          authenticatorAttachment: "platform",
+          userVerification: "required"
+        }
+      }
+    });
+    localStorage.setItem("biometric", "true");
+  } catch (e) {
+    console.warn("Biometría no registrada");
+  }
+}
+
+async function authenticateBiometric() {
+  if (!window.PublicKeyCredential || !localStorage.getItem("biometric")) {
+    alert("Ingresa el código");
     return;
   }
 
-  const status = document.getElementById("status");
-
-  try{
-    /* REGISTRO (solo una vez) */
-    if(!localStorage.getItem(PASSKEY_FLAG)){
-      status.innerText = "Registrando Face ID…";
-
-      await navigator.credentials.create({
-        publicKey:{
-          challenge: randomBuffer(),
-          rp:{
-            name:"Invoice iOS",
-            id: location.hostname   // 🔑 CLAVE para GitHub Pages
-          },
-          user:{
-            id: randomBuffer(),
-            name:"usuario@local",
-            displayName:"Usuario Invoice"
-          },
-          pubKeyCredParams:[
-            {type:"public-key", alg:-7}
-          ],
-          authenticatorSelection:{
-            authenticatorAttachment:"platform",
-            userVerification:"required"
-          },
-          timeout:60000,
-          attestation:"none"
-        }
-      });
-
-      localStorage.setItem(PASSKEY_FLAG,"true");
-    }
-
-    /* LOGIN */
-    status.innerText = "Verificando Face ID…";
-
+  try {
     await navigator.credentials.get({
-      publicKey:{
-        challenge: randomBuffer(),
-        rpId: location.hostname, // 🔑 MISMO rpId
-        userVerification:"required",
-        timeout:60000
+      publicKey: {
+        challenge: new Uint8Array(32),
+        userVerification: "required"
       }
     });
-
-    /* DESBLOQUEO */
-    document.getElementById("lock").classList.add("hidden");
-    document.getElementById("app").classList.remove("hidden");
-
-  }catch(err){
-    console.error(err);
-    alert("Face ID cancelado o fallido");
+    show("app");
+  } catch {
+    alert("Autenticación cancelada");
   }
-}
-
-/* DEMO */
-function pdf(){
-  html2pdf().from(document.body).save("invoice-demo.pdf");
 }
 </script>
 
