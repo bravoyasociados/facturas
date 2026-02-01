@@ -5,51 +5,55 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Invoice PWA</title>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
 <style>
-:root {
+:root{
   --bg:#f2f2f7;
   --card:#fff;
   --text:#000;
   --primary:#007aff;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg:#000;
-    --card:#1c1c1e;
-    --text:#fff;
-  }
+@media(prefers-color-scheme:dark){
+  :root{--bg:#000;--card:#1c1c1e;--text:#fff}
 }
-body {
+body{
   margin:0;
   font-family:-apple-system,BlinkMacSystemFont;
   background:var(--bg);
   color:var(--text);
 }
-.screen {display:none;padding:24px}
-.screen.active{display:block}
-.card {
-  background:var(--card);
-  border-radius:16px;
+.app{
+  max-width:480px;
+  margin:auto;
   padding:20px;
-  margin-bottom:16px;
 }
-input,select,button {
+.screen{display:none}
+.screen.active{display:block}
+.card{
+  background:var(--card);
+  border-radius:18px;
+  padding:20px;
+  margin-bottom:18px;
+}
+input,select,button{
   width:100%;
   padding:14px;
-  border-radius:12px;
+  border-radius:14px;
   border:none;
   margin-top:10px;
   font-size:16px;
 }
-button {background:var(--primary);color:#fff}
-.logo{text-align:center;margin-bottom:20px}
+button{background:var(--primary);color:#fff}
+.logo{text-align:center;margin:20px 0}
 .logo img{max-height:70px}
-.list-item{padding:12px;border-bottom:1px solid #ccc;font-size:14px}
 .small{font-size:13px;opacity:.7}
+.list-item{padding:12px;border-bottom:1px solid #ccc}
 </style>
 </head>
 
 <body>
+<div class="app">
 
 <!-- LOGIN -->
 <div id="login" class="screen active">
@@ -69,13 +73,20 @@ button {background:var(--primary);color:#fff}
   <div class="card">
     <h3>Negocio</h3>
     <select id="business"></select>
-    <input id="newBusiness" placeholder="Nuevo negocio">
+    <input id="newBusiness" placeholder="Nombre del negocio">
+    <input type="file" accept="image/*" onchange="loadBizLogo(this)">
     <button onclick="addBusiness()">Agregar negocio</button>
+  </div>
+
+  <!-- CONFIG IVA -->
+  <div class="card">
+    <h3>IVA</h3>
+    <input type="number" id="ivaPercent" placeholder="Porcentaje IVA (ej. 16)">
   </div>
 
   <!-- DOCUMENTO -->
   <div class="card">
-    <h3>Nuevo documento</h3>
+    <h3>Documento</h3>
     <select id="type">
       <option>Factura</option>
       <option>Cotización</option>
@@ -88,7 +99,7 @@ button {background:var(--primary);color:#fff}
       <option>USD</option>
       <option>EUR</option>
     </select>
-    <button onclick="saveDoc()">Guardar</button>
+    <button onclick="createPDF()">Guardar y compartir PDF</button>
   </div>
 
   <!-- HISTORIAL -->
@@ -99,9 +110,11 @@ button {background:var(--primary);color:#fff}
 
   <button onclick="logout()">Cerrar sesión</button>
 </div>
+</div>
 
 <script>
 const PIN="28053";
+let tempLogo=null;
 
 function show(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -109,102 +122,112 @@ function show(id){
 }
 
 function login(){
-  const pin=document.getElementById('pin').value;
-  if(pin===PIN){
-    if(!localStorage.getItem("registered")){
-      registerBiometric();
-      localStorage.setItem("registered","1");
-    }
-    show("app");
-    loadAll();
-  } else authenticateBiometric();
+  if(pin.value===PIN){show("app");loadAll()}
+  else authenticateBiometric();
 }
-
 function logout(){show("login")}
 
-async function registerBiometric(){
-  if(!window.PublicKeyCredential) return;
-  try{
-    await navigator.credentials.create({
-      publicKey:{
-        challenge:new Uint8Array(32),
-        rp:{name:"Invoice PWA"},
-        user:{id:new Uint8Array(16),name:"user",displayName:"User"},
-        pubKeyCredParams:[{type:"public-key",alg:-7}],
-        authenticatorSelection:{authenticatorAttachment:"platform",userVerification:"required"}
-      }
-    });
-    localStorage.setItem("bio","1");
-  }catch{}
-}
-
 async function authenticateBiometric(){
-  if(!localStorage.getItem("bio")) return alert("Ingresa el código");
   try{
     await navigator.credentials.get({
       publicKey:{challenge:new Uint8Array(32),userVerification:"required"}
     });
-    show("app"); loadAll();
-  }catch{alert("Cancelado")}
+    show("app");loadAll();
+  }catch{alert("Usa el código")}
+}
+
+function loadBizLogo(input){
+  const r=new FileReader();
+  r.onload=e=>tempLogo=e.target.result;
+  r.readAsDataURL(input.files[0]);
+}
+
+function addBusiness(){
+  if(!newBusiness.value) return;
+  const list=JSON.parse(localStorage.getItem("biz")||"[]");
+  list.push({name:newBusiness.value,logo:tempLogo});
+  localStorage.setItem("biz",JSON.stringify(list));
+  newBusiness.value=""; tempLogo=null;
+  loadBusinesses();
+}
+
+function loadBusinesses(){
+  business.innerHTML="";
+  const list=JSON.parse(localStorage.getItem("biz")||"[]");
+  list.forEach((b,i)=>{
+    const o=document.createElement("option");
+    o.value=i; o.textContent=b.name;
+    business.appendChild(o);
+  });
 }
 
 function loadAll(){
   loadBusinesses();
   loadHistory();
-  if(Notification && Notification.permission!=="granted"){
-    Notification.requestPermission();
-  }
 }
 
-function addBusiness(){
-  const b=document.getElementById('newBusiness').value;
-  if(!b) return;
-  const list=JSON.parse(localStorage.getItem("biz")||"[]");
-  list.push(b);
-  localStorage.setItem("biz",JSON.stringify(list));
-  loadBusinesses();
+async function createPDF(){
+  const biz=JSON.parse(localStorage.getItem("biz"))[business.value];
+  const base=parseFloat(amount.value||0);
+  const ivaP=parseFloat(ivaPercent.value||0);
+  const ivaVal=type.value==="Factura"? base*(ivaP/100):0;
+  const total=base+ivaVal;
+
+  const wrapper=document.createElement("div");
+  wrapper.style.padding="30px";
+  wrapper.innerHTML=`
+    <div style="position:relative">
+      ${type.value==="Cotización"?`
+      <div style="position:absolute;top:40%;left:10%;
+      transform:rotate(-30deg);font-size:48px;
+      opacity:0.15">COTIZACIÓN</div>`:""}
+      <div style="text-align:center">
+        ${biz.logo?`<img src="${biz.logo}" style="max-height:80px"><br>`:""}
+        <h2>${biz.name}</h2>
+      </div>
+      <hr>
+      <p><b>${type.value}</b></p>
+      <p>Cliente: ${client.value}</p>
+      <p>Concepto: ${concept.value}</p>
+      <p>Subtotal: ${base.toFixed(2)} ${currency.value}</p>
+      ${ivaVal?`<p>IVA (${ivaP}%): ${ivaVal.toFixed(2)} ${currency.value}</p>`:""}
+      <h3>Total: ${total.toFixed(2)} ${currency.value}</h3>
+      <p class="small">${new Date().toLocaleString()}</p>
+    </div>
+  `;
+
+  const pdfBlob=await html2pdf().from(wrapper).outputPdf('blob');
+  saveHistory(total);
+  sharePDF(pdfBlob);
 }
 
-function loadBusinesses(){
-  const sel=document.getElementById("business");
-  sel.innerHTML="";
-  const list=JSON.parse(localStorage.getItem("biz")||"[]");
-  list.forEach(b=>{
-    const o=document.createElement("option");
-    o.textContent=b; sel.appendChild(o);
-  });
-}
-
-function saveDoc(){
-  const doc={
-    type:type.value,
-    client:client.value,
-    concept:concept.value,
-    amount:amount.value,
-    currency:currency.value,
-    business:business.value,
-    date:new Date().toLocaleString()
-  };
+function saveHistory(total){
   const h=JSON.parse(localStorage.getItem("hist")||"[]");
-  h.unshift(doc);
+  h.unshift({
+    type:type.value,
+    total:total,
+    currency:currency.value,
+    date:new Date().toLocaleString()
+  });
   localStorage.setItem("hist",JSON.stringify(h));
   loadHistory();
-  if(Notification.permission==="granted"){
-    new Notification("Documento guardado",{body:doc.type+" - "+doc.amount+" "+doc.currency});
-  }
 }
 
 function loadHistory(){
-  const h=JSON.parse(localStorage.getItem("hist")||"[]");
   history.innerHTML="";
+  const h=JSON.parse(localStorage.getItem("hist")||"[]");
   h.forEach(d=>{
     const div=document.createElement("div");
     div.className="list-item";
-    div.innerHTML=`<b>${d.type}</b> • ${d.amount} ${d.currency}<br>
-    ${d.client} — ${d.business}<br>
+    div.innerHTML=`<b>${d.type}</b> • ${d.total} ${d.currency}<br>
     <span class="small">${d.date}</span>`;
     history.appendChild(div);
   });
+}
+
+async function sharePDF(blob){
+  const file=new File([blob],"documento.pdf",{type:"application/pdf"});
+  await navigator.share({files:[file],title:"Documento"});
 }
 </script>
 
