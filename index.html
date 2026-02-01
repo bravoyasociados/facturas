@@ -78,10 +78,10 @@ button{background:var(--primary);color:#fff}
     <button onclick="addBusiness()">Agregar negocio</button>
   </div>
 
-  <!-- CONFIG IVA -->
+  <!-- IVA -->
   <div class="card">
     <h3>IVA</h3>
-    <input type="number" id="ivaPercent" placeholder="Porcentaje IVA (ej. 16)">
+    <input type="number" id="ivaPercent" placeholder="Ej. 16">
   </div>
 
   <!-- DOCUMENTO -->
@@ -116,14 +116,20 @@ button{background:var(--primary);color:#fff}
 const PIN="28053";
 let tempLogo=null;
 
+/* ---------- UI ---------- */
 function show(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
 
+/* ---------- LOGIN ---------- */
 function login(){
-  if(pin.value===PIN){show("app");loadAll()}
-  else authenticateBiometric();
+  if(pin.value===PIN){
+    show("app");
+    initData();
+  }else{
+    authenticateBiometric();
+  }
 }
 function logout(){show("login")}
 
@@ -132,55 +138,76 @@ async function authenticateBiometric(){
     await navigator.credentials.get({
       publicKey:{challenge:new Uint8Array(32),userVerification:"required"}
     });
-    show("app");loadAll();
-  }catch{alert("Usa el código")}
+    show("app");
+    initData();
+  }catch{
+    alert("Ingresa el código");
+  }
 }
 
-function loadBizLogo(input){
-  const r=new FileReader();
-  r.onload=e=>tempLogo=e.target.result;
-  r.readAsDataURL(input.files[0]);
-}
-
-function addBusiness(){
-  if(!newBusiness.value) return;
-  const list=JSON.parse(localStorage.getItem("biz")||"[]");
-  list.push({name:newBusiness.value,logo:tempLogo});
-  localStorage.setItem("biz",JSON.stringify(list));
-  newBusiness.value=""; tempLogo=null;
-  loadBusinesses();
-}
-
-function loadBusinesses(){
-  business.innerHTML="";
-  const list=JSON.parse(localStorage.getItem("biz")||"[]");
-  list.forEach((b,i)=>{
-    const o=document.createElement("option");
-    o.value=i; o.textContent=b.name;
-    business.appendChild(o);
-  });
-}
-
-function loadAll(){
+/* ---------- DATA INIT ---------- */
+function initData(){
+  if(!localStorage.getItem("biz")){
+    localStorage.setItem("biz", JSON.stringify([
+      { name:"Mi Negocio", logo:null }
+    ]));
+  }
   loadBusinesses();
   loadHistory();
 }
 
-async function createPDF(){
-  const biz=JSON.parse(localStorage.getItem("biz"))[business.value];
-  const base=parseFloat(amount.value||0);
-  const ivaP=parseFloat(ivaPercent.value||0);
-  const ivaVal=type.value==="Factura"? base*(ivaP/100):0;
-  const total=base+ivaVal;
+/* ---------- NEGOCIOS ---------- */
+function loadBizLogo(input){
+  const reader=new FileReader();
+  reader.onload=e=>tempLogo=e.target.result;
+  reader.readAsDataURL(input.files[0]);
+}
 
-  const wrapper=document.createElement("div");
-  wrapper.style.padding="30px";
-  wrapper.innerHTML=`
+function addBusiness(){
+  if(!newBusiness.value) return;
+  const list=JSON.parse(localStorage.getItem("biz"));
+  list.push({name:newBusiness.value, logo:tempLogo});
+  localStorage.setItem("biz", JSON.stringify(list));
+  newBusiness.value="";
+  tempLogo=null;
+  loadBusinesses();
+}
+
+function loadBusinesses(){
+  const list=JSON.parse(localStorage.getItem("biz"));
+  business.innerHTML="";
+  list.forEach((b,i)=>{
+    const o=document.createElement("option");
+    o.value=i;
+    o.textContent=b.name;
+    business.appendChild(o);
+  });
+  business.selectedIndex=0;
+}
+
+/* ---------- DOCUMENTO ---------- */
+async function createPDF(){
+  if(!amount.value || !client.value){
+    alert("Completa los datos");
+    return;
+  }
+
+  const list=JSON.parse(localStorage.getItem("biz"));
+  const biz=list[business.value];
+
+  const base=parseFloat(amount.value);
+  const ivaP=parseFloat(ivaPercent.value||0);
+  const iva=type.value==="Factura"? base*(ivaP/100):0;
+  const total=base+iva;
+
+  const pdf=document.createElement("div");
+  pdf.style.padding="30px";
+  pdf.innerHTML=`
     <div style="position:relative">
       ${type.value==="Cotización"?`
       <div style="position:absolute;top:40%;left:10%;
-      transform:rotate(-30deg);font-size:48px;
-      opacity:0.15">COTIZACIÓN</div>`:""}
+      transform:rotate(-30deg);font-size:48px;opacity:0.15">
+      COTIZACIÓN</div>`:""}
       <div style="text-align:center">
         ${biz.logo?`<img src="${biz.logo}" style="max-height:80px"><br>`:""}
         <h2>${biz.name}</h2>
@@ -190,23 +217,25 @@ async function createPDF(){
       <p>Cliente: ${client.value}</p>
       <p>Concepto: ${concept.value}</p>
       <p>Subtotal: ${base.toFixed(2)} ${currency.value}</p>
-      ${ivaVal?`<p>IVA (${ivaP}%): ${ivaVal.toFixed(2)} ${currency.value}</p>`:""}
+      ${iva>0?`<p>IVA (${ivaP}%): ${iva.toFixed(2)} ${currency.value}</p>`:""}
       <h3>Total: ${total.toFixed(2)} ${currency.value}</h3>
       <p class="small">${new Date().toLocaleString()}</p>
     </div>
   `;
 
-  const pdfBlob=await html2pdf().from(wrapper).outputPdf('blob');
-  saveHistory(total);
-  sharePDF(pdfBlob);
+  const blob = await html2pdf().from(pdf).output('blob');
+
+  saveHistory(type.value,total,currency.value);
+  sharePDF(blob);
 }
 
-function saveHistory(total){
+/* ---------- HISTORIAL ---------- */
+function saveHistory(type,total,currency){
   const h=JSON.parse(localStorage.getItem("hist")||"[]");
   h.unshift({
-    type:type.value,
-    total:total,
-    currency:currency.value,
+    type:type,
+    total:total.toFixed(2),
+    currency:currency,
     date:new Date().toLocaleString()
   });
   localStorage.setItem("hist",JSON.stringify(h));
@@ -225,9 +254,13 @@ function loadHistory(){
   });
 }
 
+/* ---------- SHARE ---------- */
 async function sharePDF(blob){
   const file=new File([blob],"documento.pdf",{type:"application/pdf"});
-  await navigator.share({files:[file],title:"Documento"});
+  await navigator.share({
+    files:[file],
+    title:"Documento"
+  });
 }
 </script>
 
