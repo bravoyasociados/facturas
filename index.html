@@ -10,292 +10,133 @@
 
 <style>
 :root{
---bg:#f2f2f7;
---card:rgba(255,255,255,.75);
---text:#1c1c1e;
---sub:#8e8e93;
---primary:#007aff;
+--bg:#f2f2f7;--card:rgba(255,255,255,.75);
+--text:#1c1c1e;--primary:#007aff;
 }
 @media (prefers-color-scheme: dark){
 :root{
---bg:#000;
---card:rgba(28,28,30,.75);
+--bg:#000;--card:rgba(28,28,30,.75);
 --text:#f2f2f7;
---sub:#8e8e93;
-}
-}
+}}
 body{
-margin:0;
-background:var(--bg);
+margin:0;background:var(--bg);
 font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display";
 color:var(--text);
 }
 .hidden{display:none}
 .app{max-width:900px;margin:auto;padding:20px}
 .card{
-background:var(--card);
-backdrop-filter:blur(25px);
-border-radius:22px;
-padding:20px;
-margin-bottom:20px;
-box-shadow:0 20px 40px rgba(0,0,0,.08)
-}
-input,select,button{
-width:100%;
-padding:12px;
-border-radius:14px;
-border:1px solid #ccc;
-margin:6px 0;
-font-size:15px;
+background:var(--card);backdrop-filter:blur(25px);
+border-radius:22px;padding:20px;margin-bottom:20px;
 }
 button{
-background:var(--primary);
-color:#fff;
-border:none;
+width:100%;padding:14px;border-radius:16px;
+border:none;background:var(--primary);color:#fff;
+font-size:16px;
 }
-table{
-width:100%;
-border-collapse:collapse;
-}
-td,th{
-padding:10px;
-border-bottom:1px solid rgba(0,0,0,.15);
-text-align:center;
-}
-.total{
-text-align:right;
-font-size:18px;
-font-weight:600;
-}
-.list{
-padding:10px;
-border-radius:14px;
-background:rgba(0,0,0,.05);
+input,select{
+width:100%;padding:12px;border-radius:14px;
+border:1px solid #ccc;margin:6px 0;
 }
 .lock{
-height:100vh;
-display:flex;
-align-items:center;
-justify-content:center;
+height:100vh;display:flex;
 flex-direction:column;
-}
-.logo{
+align-items:center;justify-content:center;
 text-align:center;
-margin-bottom:10px;
 }
-.logo img{
-max-height:80px;
-object-fit:contain;
-}
+.logo img{max-height:80px}
 </style>
 </head>
 
 <body>
 
-<!-- BLOQUEO FACE ID -->
+<!-- BLOQUEO -->
 <div id="lock" class="lock">
 <div class="logo">
-  <img src="logotipo.jpeg" alt="Logotipo">
+<img src="logotipo.jpeg">
 </div>
 <h2>Invoice iOS</h2>
-<button onclick="login()">Desbloquear con Face ID</button>
+<p id="lockText">Autenticación requerida</p>
+<button onclick="auth()">Continuar con Face ID</button>
 </div>
 
 <!-- APP -->
 <div id="app" class="app hidden">
-
-<!-- LOGOTIPO EN APP -->
-<div class="logo">
-  <img src="logotipo.jpeg" alt="Logotipo">
-</div>
-
-<h2>Negocio</h2>
-<select id="negocio" onchange="cargarNegocio()"></select>
-<input id="nuevoNegocio" placeholder="Nuevo negocio">
-<button onclick="agregarNegocio()">Agregar negocio</button>
-
+<h2>Invoice iOS Pro</h2>
 <div class="card">
-<select id="tipo" onchange="actualizarFolio()">
-<option>Factura</option>
-<option>Cotización</option>
-</select>
-<input id="folio" readonly>
+<p>Acceso concedido correctamente</p>
+<button onclick="pdf()">Probar PDF</button>
 </div>
-
-<div class="card">
-<h3>Cliente</h3>
-<input id="cliente" placeholder="Cliente">
-</div>
-
-<div class="card">
-<h3>Conceptos</h3>
-<table>
-<thead>
-<tr>
-<th>Descripción</th>
-<th>Cant</th>
-<th>Precio</th>
-<th>Total</th>
-</tr>
-</thead>
-<tbody id="items"></tbody>
-</table>
-<button onclick="agregarLinea()">Agregar concepto</button>
-</div>
-
-<div class="card">
-<select id="moneda" onchange="calc()">
-<option value="MXN">$ MXN</option>
-<option value="USD">$ USD</option>
-<option value="EUR">€ EUR</option>
-</select>
-
-<label>
-<input type="checkbox" id="ivaOn" checked onchange="calc()"> Aplicar IVA
-</label>
-
-<input id="iva" type="number" value="16" onchange="calc()">
-
-<div class="total">Subtotal: <span id="sub">0.00</span></div>
-<div class="total">IVA: <span id="ivam">0.00</span></div>
-<div class="total">Total: <span id="tot">0.00</span></div>
-</div>
-
-<div class="card">
-<button onclick="guardar()">Guardar</button>
-<button onclick="pdf()">Exportar PDF</button>
-</div>
-
-<div class="card">
-<h3>Historial</h3>
-<div id="historial" class="list"></div>
-</div>
-
 </div>
 
 <script>
-let data=JSON.parse(localStorage.getItem("invoiceData")||"{}");
-let negocioActual="";
+const credKey = "invoice_passkey";
 
-function agregarNegocio(){
-let n=nuevoNegocio.value.trim();
-if(!n)return;
-data[n]={folio:1,docs:[]};
-guardarData();
-cargarNegocios();
-nuevoNegocio.value="";
+/* UTIL */
+function buf(b){return Uint8Array.from(b, c => c.charCodeAt(0))}
+function rand(n=32){return crypto.getRandomValues(new Uint8Array(n))}
+
+/* AUTENTICACIÓN FACE ID REAL */
+async function auth(){
+if(!window.PublicKeyCredential){
+alert("Tu navegador no soporta Face ID web");
+return;
 }
 
-function cargarNegocios(){
-negocio.innerHTML="";
-Object.keys(data).forEach(n=>{
-let o=document.createElement("option");
-o.text=n;
-o.value=n;
-negocio.appendChild(o);
-});
-negocioActual=negocio.value;
-cargarNegocio();
-}
+const stored = localStorage.getItem(credKey);
 
-function cargarNegocio(){
-negocioActual=negocio.value;
-actualizarFolio();
-renderHistorial();
-}
-
-function actualizarFolio(){
-if(!negocioActual)return;
-let f=data[negocioActual].folio;
-folio.value=tipo.value.substring(0,3).toUpperCase()+"-"+String(f).padStart(4,"0");
-}
-
-function agregarLinea(){
-let tr=document.createElement("tr");
-tr.innerHTML=`
-<td><input></td>
-<td><input type="number" value="1" onchange="calc()"></td>
-<td><input type="number" value="0" onchange="calc()"></td>
-<td class="l">0.00</td>`;
-items.appendChild(tr);
-}
-
-function calc(){
-let s=0;
-document.querySelectorAll(".l").forEach(l=>{
-let r=l.parentElement;
-let c=r.children[1].children[0].value;
-let p=r.children[2].children[0].value;
-let t=c*p;
-l.innerText=t.toFixed(2);
-s+=t;
-});
-sub.innerText=s.toFixed(2);
-let ivaMonto=ivaOn.checked?s*(iva.value/100):0;
-ivam.innerText=ivaMonto.toFixed(2);
-tot.innerText=(s+ivaMonto).toFixed(2);
-}
-
-function guardar(){
-let doc={
-folio:folio.value,
-cliente:cliente.value,
-total:tot.innerText
-};
-data[negocioActual].docs.push(doc);
-data[negocioActual].folio++;
-guardarData();
-renderHistorial();
-notificar("Documento guardado correctamente");
-}
-
-function renderHistorial(){
-historial.innerHTML="";
-data[negocioActual].docs.forEach(d=>{
-historial.innerHTML+=`<div>${d.folio} — ${d.cliente} — ${d.total}</div>`;
-});
-}
-
-function guardarData(){
-localStorage.setItem("invoiceData",JSON.stringify(data));
-}
-
-function pdf(){
-html2pdf().from(app).save();
-}
-
-/* NOTIFICACIONES */
-function notificar(msg){
-if(Notification.permission==="granted"){
-new Notification("Invoice iOS",{body:msg});
-}else{
-Notification.requestPermission();
-}
-}
-
-/* FACE ID / BIOMETRÍA */
-async function login(){
 try{
+if(!stored){
+/* REGISTRO PASSKEY */
+document.getElementById("lockText").innerText="Registrando Face ID…";
+
+const cred = await navigator.credentials.create({
+publicKey:{
+challenge: rand(),
+rp:{name:"Invoice iOS"},
+user:{
+id: rand(),
+name:"usuario@local",
+displayName:"Usuario Invoice"
+},
+pubKeyCredParams:[{type:"public-key",alg:-7}],
+authenticatorSelection:{
+authenticatorAttachment:"platform",
+userVerification:"required"
+},
+timeout:60000,
+attestation:"none"
+}
+});
+
+localStorage.setItem(credKey,"true");
+}
+
+/* LOGIN FACE ID */
+document.getElementById("lockText").innerText="Verificando Face ID…";
+
 await navigator.credentials.get({
 publicKey:{
-challenge:new Uint8Array(32),
-userVerification:"required"
+challenge: rand(),
+userVerification:"required",
+timeout:60000
 }
 });
+
+/* ACCESO */
 lock.classList.add("hidden");
 app.classList.remove("hidden");
+
 }catch(e){
-alert("Autenticación cancelada");
+alert("Autenticación cancelada o fallida");
+console.error(e);
 }
 }
 
-window.onload=()=>{
-if(!Object.keys(data).length){
-data["Mi Negocio"]={folio:1,docs:[]};
-guardarData();
+/* DEMO */
+function pdf(){
+html2pdf().from(document.body).save("demo.pdf");
 }
-cargarNegocios();
-};
 </script>
 
 </body>
