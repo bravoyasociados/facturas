@@ -10,41 +10,58 @@
 
 <style>
 :root{
---bg:#f2f2f7;--card:rgba(255,255,255,.75);
---text:#1c1c1e;--primary:#007aff;
+--bg:#f2f2f7;
+--card:rgba(255,255,255,.75);
+--text:#1c1c1e;
+--primary:#007aff;
 }
 @media (prefers-color-scheme: dark){
 :root{
---bg:#000;--card:rgba(28,28,30,.75);
+--bg:#000;
+--card:rgba(28,28,30,.75);
 --text:#f2f2f7;
 }}
 body{
-margin:0;background:var(--bg);
+margin:0;
+background:var(--bg);
 font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display";
 color:var(--text);
 }
 .hidden{display:none}
-.app{max-width:900px;margin:auto;padding:20px}
-.card{
-background:var(--card);backdrop-filter:blur(25px);
-border-radius:22px;padding:20px;margin-bottom:20px;
+.lock{
+height:100vh;
+display:flex;
+flex-direction:column;
+justify-content:center;
+align-items:center;
+text-align:center;
+padding:20px;
+}
+.logo img{
+max-height:90px;
+margin-bottom:15px;
 }
 button{
-width:100%;padding:14px;border-radius:16px;
-border:none;background:var(--primary);color:#fff;
+width:100%;
+max-width:300px;
+padding:14px;
+border-radius:16px;
+border:none;
+background:var(--primary);
+color:#fff;
 font-size:16px;
 }
-input,select{
-width:100%;padding:12px;border-radius:14px;
-border:1px solid #ccc;margin:6px 0;
+.app{
+max-width:900px;
+margin:auto;
+padding:20px;
 }
-.lock{
-height:100vh;display:flex;
-flex-direction:column;
-align-items:center;justify-content:center;
-text-align:center;
+.card{
+background:var(--card);
+backdrop-filter:blur(25px);
+border-radius:22px;
+padding:20px;
 }
-.logo img{max-height:80px}
 </style>
 </head>
 
@@ -52,90 +69,100 @@ text-align:center;
 
 <!-- BLOQUEO -->
 <div id="lock" class="lock">
-<div class="logo">
-<img src="logotipo.jpeg">
-</div>
-<h2>Invoice iOS</h2>
-<p id="lockText">Autenticación requerida</p>
-<button onclick="auth()">Continuar con Face ID</button>
+  <div class="logo">
+    <img src="logotipo.JPG" alt="Logotipo">
+  </div>
+  <h2>Invoice iOS</h2>
+  <p id="status">Autenticación requerida</p>
+  <button onclick="auth()">Continuar con Face ID</button>
 </div>
 
 <!-- APP -->
 <div id="app" class="app hidden">
-<h2>Invoice iOS Pro</h2>
-<div class="card">
-<p>Acceso concedido correctamente</p>
-<button onclick="pdf()">Probar PDF</button>
-</div>
+  <div class="logo" style="text-align:center">
+    <img src="logotipo.JPG" alt="Logotipo" style="max-height:80px">
+  </div>
+  <div class="card">
+    <h3>✅ Acceso concedido</h3>
+    <p>Face ID verificado correctamente.</p>
+    <button onclick="pdf()">Probar PDF</button>
+  </div>
 </div>
 
 <script>
-const credKey = "invoice_passkey";
+const PASSKEY_FLAG = "invoice_passkey_ok";
 
-/* UTIL */
-function buf(b){return Uint8Array.from(b, c => c.charCodeAt(0))}
-function rand(n=32){return crypto.getRandomValues(new Uint8Array(n))}
+/* Utils */
+function randomBuffer(len = 32){
+  return crypto.getRandomValues(new Uint8Array(len));
+}
 
-/* AUTENTICACIÓN FACE ID REAL */
+/* FACE ID FLOW CORRECTO */
 async function auth(){
-if(!window.PublicKeyCredential){
-alert("Tu navegador no soporta Face ID web");
-return;
-}
+  if(!window.PublicKeyCredential){
+    alert("Este navegador no soporta Face ID web");
+    return;
+  }
 
-const stored = localStorage.getItem(credKey);
+  const status = document.getElementById("status");
 
-try{
-if(!stored){
-/* REGISTRO PASSKEY */
-document.getElementById("lockText").innerText="Registrando Face ID…";
+  try{
+    /* REGISTRO (solo una vez) */
+    if(!localStorage.getItem(PASSKEY_FLAG)){
+      status.innerText = "Registrando Face ID…";
 
-const cred = await navigator.credentials.create({
-publicKey:{
-challenge: rand(),
-rp:{name:"Invoice iOS"},
-user:{
-id: rand(),
-name:"usuario@local",
-displayName:"Usuario Invoice"
-},
-pubKeyCredParams:[{type:"public-key",alg:-7}],
-authenticatorSelection:{
-authenticatorAttachment:"platform",
-userVerification:"required"
-},
-timeout:60000,
-attestation:"none"
-}
-});
+      await navigator.credentials.create({
+        publicKey:{
+          challenge: randomBuffer(),
+          rp:{
+            name:"Invoice iOS",
+            id: location.hostname   // 🔑 CLAVE para GitHub Pages
+          },
+          user:{
+            id: randomBuffer(),
+            name:"usuario@local",
+            displayName:"Usuario Invoice"
+          },
+          pubKeyCredParams:[
+            {type:"public-key", alg:-7}
+          ],
+          authenticatorSelection:{
+            authenticatorAttachment:"platform",
+            userVerification:"required"
+          },
+          timeout:60000,
+          attestation:"none"
+        }
+      });
 
-localStorage.setItem(credKey,"true");
-}
+      localStorage.setItem(PASSKEY_FLAG,"true");
+    }
 
-/* LOGIN FACE ID */
-document.getElementById("lockText").innerText="Verificando Face ID…";
+    /* LOGIN */
+    status.innerText = "Verificando Face ID…";
 
-await navigator.credentials.get({
-publicKey:{
-challenge: rand(),
-userVerification:"required",
-timeout:60000
-}
-});
+    await navigator.credentials.get({
+      publicKey:{
+        challenge: randomBuffer(),
+        rpId: location.hostname, // 🔑 MISMO rpId
+        userVerification:"required",
+        timeout:60000
+      }
+    });
 
-/* ACCESO */
-lock.classList.add("hidden");
-app.classList.remove("hidden");
+    /* DESBLOQUEO */
+    document.getElementById("lock").classList.add("hidden");
+    document.getElementById("app").classList.remove("hidden");
 
-}catch(e){
-alert("Autenticación cancelada o fallida");
-console.error(e);
-}
+  }catch(err){
+    console.error(err);
+    alert("Face ID cancelado o fallido");
+  }
 }
 
 /* DEMO */
 function pdf(){
-html2pdf().from(document.body).save("demo.pdf");
+  html2pdf().from(document.body).save("invoice-demo.pdf");
 }
 </script>
 
