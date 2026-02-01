@@ -69,7 +69,6 @@ button{background:var(--primary);color:#fff}
 <div id="app" class="screen">
   <div class="logo"><img src="logotipo.jpg"></div>
 
-  <!-- NEGOCIO -->
   <div class="card">
     <h3>Negocio</h3>
     <select id="business"></select>
@@ -78,13 +77,11 @@ button{background:var(--primary);color:#fff}
     <button onclick="addBusiness()">Agregar negocio</button>
   </div>
 
-  <!-- IVA -->
   <div class="card">
     <h3>IVA</h3>
     <input type="number" id="ivaPercent" placeholder="Ej. 16">
   </div>
 
-  <!-- DOCUMENTO -->
   <div class="card">
     <h3>Documento</h3>
     <select id="type">
@@ -102,7 +99,6 @@ button{background:var(--primary);color:#fff}
     <button onclick="createPDF()">Guardar y compartir PDF</button>
   </div>
 
-  <!-- HISTORIAL -->
   <div class="card">
     <h3>Historial</h3>
     <div id="history"></div>
@@ -128,29 +124,20 @@ function login(){
     show("app");
     initData();
   }else{
-    authenticateBiometric();
+    alert("Código incorrecto");
   }
 }
 function logout(){show("login")}
 
-async function authenticateBiometric(){
-  try{
-    await navigator.credentials.get({
-      publicKey:{challenge:new Uint8Array(32),userVerification:"required"}
-    });
-    show("app");
-    initData();
-  }catch{
-    alert("Ingresa el código");
-  }
-}
-
-/* ---------- DATA INIT ---------- */
+/* ---------- INIT DATA ---------- */
 function initData(){
   if(!localStorage.getItem("biz")){
     localStorage.setItem("biz", JSON.stringify([
       { name:"Mi Negocio", logo:null }
     ]));
+  }
+  if(!localStorage.getItem("hist")){
+    localStorage.setItem("hist","[]");
   }
   loadBusinesses();
   loadHistory();
@@ -166,8 +153,8 @@ function loadBizLogo(input){
 function addBusiness(){
   if(!newBusiness.value) return;
   const list=JSON.parse(localStorage.getItem("biz"));
-  list.push({name:newBusiness.value, logo:tempLogo});
-  localStorage.setItem("biz", JSON.stringify(list));
+  list.push({name:newBusiness.value,logo:tempLogo});
+  localStorage.setItem("biz",JSON.stringify(list));
   newBusiness.value="";
   tempLogo=null;
   loadBusinesses();
@@ -185,16 +172,14 @@ function loadBusinesses(){
   business.selectedIndex=0;
 }
 
-/* ---------- DOCUMENTO ---------- */
+/* ---------- PDF + HISTORIAL ---------- */
 async function createPDF(){
-  if(!amount.value || !client.value){
+  if(!client.value || !amount.value){
     alert("Completa los datos");
     return;
   }
 
-  const list=JSON.parse(localStorage.getItem("biz"));
-  const biz=list[business.value];
-
+  const biz=JSON.parse(localStorage.getItem("biz"))[business.value];
   const base=parseFloat(amount.value);
   const ivaP=parseFloat(ivaPercent.value||0);
   const iva=type.value==="Factura"? base*(ivaP/100):0;
@@ -223,7 +208,10 @@ async function createPDF(){
     </div>
   `;
 
-  const blob = await html2pdf().from(pdf).output('blob');
+  // ✅ FORMA CORRECTA EN SAFARI iOS
+  const worker = html2pdf().from(pdf).toPdf();
+  const pdfObj = await worker.get('pdf');
+  const blob = pdfObj.output('blob');
 
   saveHistory(type.value,total,currency.value);
   sharePDF(blob);
@@ -231,11 +219,11 @@ async function createPDF(){
 
 /* ---------- HISTORIAL ---------- */
 function saveHistory(type,total,currency){
-  const h=JSON.parse(localStorage.getItem("hist")||"[]");
+  const h=JSON.parse(localStorage.getItem("hist"));
   h.unshift({
-    type:type,
-    total:total.toFixed(2),
-    currency:currency,
+    type,
+    total: total.toFixed(2),
+    currency,
     date:new Date().toLocaleString()
   });
   localStorage.setItem("hist",JSON.stringify(h));
@@ -244,7 +232,7 @@ function saveHistory(type,total,currency){
 
 function loadHistory(){
   history.innerHTML="";
-  const h=JSON.parse(localStorage.getItem("hist")||"[]");
+  const h=JSON.parse(localStorage.getItem("hist"));
   h.forEach(d=>{
     const div=document.createElement("div");
     div.className="list-item";
@@ -257,10 +245,7 @@ function loadHistory(){
 /* ---------- SHARE ---------- */
 async function sharePDF(blob){
   const file=new File([blob],"documento.pdf",{type:"application/pdf"});
-  await navigator.share({
-    files:[file],
-    title:"Documento"
-  });
+  await navigator.share({files:[file],title:"Documento"});
 }
 </script>
 
